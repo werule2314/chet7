@@ -8,23 +8,44 @@ from db.models import Term, Definition, Source, get_engine
 from utils.security import encrypt_text, decrypt_text
 from cryptography.fernet import InvalidToken
 
-st.set_page_config(page_title="Система учёта терминов", layout="centered")
+st.set_page_config(page_title="Система учёта терминов", layout="wide")
 
 engine = get_engine()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-st.title("📚 Система учёта терминов и определений (защищённая)")
+# ===== Интерфейс =====
 
-menu = st.sidebar.selectbox("Навигация", [
-    "Добавить термин",
-    "Просмотр терминов",
-    "Удалить термин",
-    "Поиск и выборки"
-])
+st.markdown("# 🛡 chet7 — Система учёта терминов и определений")
+st.markdown("Добро пожаловать в защищённую систему учета терминов. Используйте меню ниже для работы.")
 
-# === 1. Добавить термин ===
-if menu == "Добавить термин":
+# Навигация через кнопки
+menu = st.radio("Выберите действие:", [
+    "🏠 Главная",
+    "➕ Добавить термин",
+    "📖 Просмотр терминов",
+    "🔎 Поиск и выборки",
+    "🗑 Удалить термин"
+], horizontal=True)
+
+st.markdown("---")
+
+# === Главная ===
+if menu == "🏠 Главная":
+    st.subheader("🔐 Описание проекта")
+    st.markdown("""
+    **Cистема chet7** предназначена для безопасного хранения терминов и определений, связанных с информационной безопасностью.
+
+    ✅ Все определения шифруются при сохранении  
+    ✅ Удобный интерфейс для поиска и редактирования  
+    ✅ Хранение источников и их связь с терминами  
+
+    ---  
+    Начните работу с системой, выбрав действие в меню сверху.
+    """)
+
+# === Добавление ===
+elif menu == "➕ Добавить термин":
     st.subheader("➕ Добавление нового термина")
 
     name = st.text_input("Название термина")
@@ -42,63 +63,42 @@ if menu == "Добавить термин":
             else:
                 try:
                     encrypted = encrypt_text(definition)
+                    term = Term(name=name)
+                    defn = Definition(content=encrypted)
+                    term.definitions.append(defn)
+
+                    source = session.query(Source).filter_by(title=source_title, year=source_year).first()
+                    if not source:
+                        source = Source(title=source_title, year=source_year)
+
+                    term.sources.append(source)
+                    session.add(term)
+                    session.commit()
+                    st.success(f"Термин '{name}' добавлен.")
                 except Exception as e:
-                    st.error(f"Ошибка шифрования: {e}")
-                    st.stop()
+                    st.error(f"Ошибка при добавлении: {e}")
 
-                term = Term(name=name)
-                defn = Definition(content=encrypted)
-                term.definitions.append(defn)
-
-                source = session.query(Source).filter_by(title=source_title, year=source_year).first()
-                if not source:
-                    source = Source(title=source_title, year=source_year)
-
-                term.sources.append(source)
-                session.add(term)
-                session.commit()
-                st.success(f"Термин '{name}' добавлен (шифрование применено).")
-
-# === 2. Просмотр терминов ===
-elif menu == "Просмотр терминов":
+# === Просмотр ===
+elif menu == "📖 Просмотр терминов":
     st.subheader("📖 Все термины")
 
     terms = session.query(Term).all()
     if not terms:
         st.info("Нет добавленных терминов.")
     for t in terms:
-        st.markdown(f"### {t.name}")
+        st.markdown(f"### 📘 {t.name}")
         for d in t.definitions:
             try:
                 text = decrypt_text(d.content)
                 st.markdown(f"- _Определение_: {text}")
             except InvalidToken:
-                st.markdown(f"- ❌ Невозможно расшифровать определение.")
+                st.markdown(f"- ❌ Не удалось расшифровать")
         for s in t.sources:
             st.markdown(f"📌 Источник: **{s.title}**, {s.year}")
         st.markdown("---")
 
-# === 3. Удаление термина ===
-elif menu == "Удалить термин":
-    st.subheader("🗑 Удаление термина")
-
-    terms = session.query(Term).all()
-    names = [t.name for t in terms]
-    if names:
-        selected = st.selectbox("Выберите термин для удаления", names)
-        if st.button("Удалить"):
-            term = session.query(Term).filter_by(name=selected).first()
-            if term:
-                session.delete(term)
-                session.commit()
-                st.success(f"Термин '{selected}' удалён.")
-            else:
-                st.warning("Термин не найден.")
-    else:
-        st.info("Нет доступных терминов для удаления.")
-
-# === 4. Поиск и выборки ===
-elif menu == "Поиск и выборки":
+# === Поиск ===
+elif menu == "🔎 Поиск и выборки":
     st.subheader("🔎 Поиск по базе")
 
     search_term = st.text_input("Введите название термина (полное или часть)")
@@ -114,7 +114,7 @@ elif menu == "Поиск и выборки":
                         decrypted = decrypt_text(d.content)
                         st.markdown(f"- _{decrypted}_")
                     except:
-                        st.markdown(f"- ❌ Не удалось расшифровать.")
+                        st.markdown("- ❌ Не удалось расшифровать")
 
     st.markdown("---")
 
@@ -145,3 +145,22 @@ elif menu == "Поиск и выборки":
             st.markdown(f"Источники для термина **{term.name}**:")
             for s in term.sources:
                 st.markdown(f"- {s.title} ({s.year})")
+
+# === Удаление ===
+elif menu == "🗑 Удалить термин":
+    st.subheader("🗑 Удаление термина")
+
+    terms = session.query(Term).all()
+    names = [t.name for t in terms]
+    if names:
+        selected = st.selectbox("Выберите термин для удаления", names)
+        if st.button("Удалить"):
+            term = session.query(Term).filter_by(name=selected).first()
+            if term:
+                session.delete(term)
+                session.commit()
+                st.success(f"Термин '{selected}' удалён.")
+            else:
+                st.warning("Термин не найден.")
+    else:
+        st.info("Нет доступных терминов для удаления.")
