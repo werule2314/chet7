@@ -8,159 +8,136 @@ from db.models import Term, Definition, Source, get_engine
 from utils.security import encrypt_text, decrypt_text
 from cryptography.fernet import InvalidToken
 
-st.set_page_config(page_title="Система учёта терминов", layout="wide")
+
+st.set_page_config(page_title="chet7 — Система учёта терминов", layout="wide")
 
 engine = get_engine()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# ===== Интерфейс =====
+st.markdown("<h1 style='color:#3c75c0;'>🛡 chet7 — Учёт терминов и определений</h1>", unsafe_allow_html=True)
 
-st.markdown("# 🛡 chet7 — Система учёта терминов и определений")
-st.markdown("Добро пожаловать в защищённую систему учета терминов. Используйте меню ниже для работы.")
-
-# Навигация через кнопки
-menu = st.radio("Выберите действие:", [
+menu = st.radio("📌 Навигация по разделам:", [
     "🏠 Главная",
-    "➕ Добавить термин",
-    "📖 Просмотр терминов",
-    "🔎 Поиск и выборки",
-    "🗑 Удалить термин"
+    "➕ Добавить",
+    "📖 Просмотр",
+    "🔎 Поиск",
+    "🗑 Удаление"
 ], horizontal=True)
 
 st.markdown("---")
 
-# === Главная ===
+# === Главная
 if menu == "🏠 Главная":
-    st.subheader("🔐 Описание проекта")
+    st.info("🎓 Этот проект создан в рамках выпускной квалификационной работы по направлению 'Информационная безопасность'.")
     st.markdown("""
-    **Cистема chet7** предназначена для безопасного хранения терминов и определений, связанных с информационной безопасностью.
+    **Возможности системы**:
+    - 🗂 Добавление терминов, определений и источников
+    - 🔐 Шифрование всех определений (алгоритм Fernet)
+    - 🔍 Поиск по терминам и содержанию
+    - 🧹 Удаление с подтверждением
+    - 📚 Привязка источников к терминам
 
-    ✅ Все определения шифруются при сохранении  
-    ✅ Удобный интерфейс для поиска и редактирования  
-    ✅ Хранение источников и их связь с терминами  
-
-    ---  
-    Начните работу с системой, выбрав действие в меню сверху.
+    **Используемые технологии**:
+    `Streamlit`, `PostgreSQL`, `SQLAlchemy`, `cryptography`, `dotenv`
     """)
 
-# === Добавление ===
-elif menu == "➕ Добавить термин":
-    st.subheader("➕ Добавление нового термина")
+# === Добавить
+elif menu == "➕ Добавить":
+    st.markdown("### ➕ Добавление термина")
+    with st.form("add_term_form"):
+        name = st.text_input("📘 Название термина")
+        definition = st.text_area("📝 Определение")
+        source_title = st.text_input("🔗 Источник (название)")
+        source_year = st.number_input("📅 Год публикации", 1900, 2100, 2024)
+        submitted = st.form_submit_button("💾 Сохранить термин")
 
-    name = st.text_input("Название термина")
-    definition = st.text_area("Определение")
-    source_title = st.text_input("Источник (название)")
-    source_year = st.number_input("Год публикации", min_value=1900, max_value=2100, step=1, value=2024)
-
-    if st.button("Сохранить"):
-        if not name or not definition or not source_title:
-            st.warning("Пожалуйста, заполните все поля.")
-        else:
-            existing_term = session.query(Term).filter_by(name=name).first()
-            if existing_term:
-                st.error("Такой термин уже существует.")
+        if submitted:
+            if not name or not definition or not source_title:
+                st.warning("⚠️ Заполните все поля.")
+            elif session.query(Term).filter_by(name=name).first():
+                st.error("🚫 Такой термин уже существует.")
             else:
-                try:
-                    encrypted = encrypt_text(definition)
-                    term = Term(name=name)
-                    defn = Definition(content=encrypted)
-                    term.definitions.append(defn)
+                term = Term(name=name)
+                encrypted = encrypt_text(definition)
+                term.definitions.append(Definition(content=encrypted))
 
-                    source = session.query(Source).filter_by(title=source_title, year=source_year).first()
-                    if not source:
-                        source = Source(title=source_title, year=source_year)
+                source = session.query(Source).filter_by(title=source_title, year=source_year).first()
+                if not source:
+                    source = Source(title=source_title, year=source_year)
 
-                    term.sources.append(source)
-                    session.add(term)
-                    session.commit()
-                    st.success(f"Термин '{name}' добавлен.")
-                except Exception as e:
-                    st.error(f"Ошибка при добавлении: {e}")
+                term.sources.append(source)
+                session.add(term)
+                session.commit()
+                st.success(f"✅ Термин **{name}** добавлен в базу.")
 
-# === Просмотр ===
-elif menu == "📖 Просмотр терминов":
-    st.subheader("📖 Все термины")
-
+# === Просмотр
+elif menu == "📖 Просмотр":
+    st.markdown("### 📖 Все термины")
     terms = session.query(Term).all()
     if not terms:
-        st.info("Нет добавленных терминов.")
+        st.info("Нет данных.")
     for t in terms:
-        st.markdown(f"### 📘 {t.name}")
-        for d in t.definitions:
-            try:
-                text = decrypt_text(d.content)
-                st.markdown(f"- _Определение_: {text}")
-            except InvalidToken:
-                st.markdown(f"- ❌ Не удалось расшифровать")
-        for s in t.sources:
-            st.markdown(f"📌 Источник: **{s.title}**, {s.year}")
-        st.markdown("---")
+        with st.expander(f"📘 {t.name}", expanded=False):
+            for d in t.definitions:
+                try:
+                    st.markdown(f"📝 _{decrypt_text(d.content)}_")
+                except:
+                    st.markdown("❌ Не удалось расшифровать")
+            for s in t.sources:
+                st.markdown(f"🔗 **Источник**: `{s.title}` ({s.year})")
+        st.divider()
 
-# === Поиск ===
-elif menu == "🔎 Поиск и выборки":
-    st.subheader("🔎 Поиск по базе")
+# === Поиск
+elif menu == "🔎 Поиск":
+    st.markdown("### 🔍 Поиск по базе")
+    col1, col2 = st.columns(2)
 
-    search_term = st.text_input("Введите название термина (полное или часть)")
-    if st.button("Найти определения термина"):
-        results = session.query(Term).filter(Term.name.ilike(f"%{search_term}%")).all()
-        if not results:
-            st.warning("Ничего не найдено.")
-        else:
+    with col1:
+        search_term = st.text_input("🔤 Поиск по названию термина")
+        if st.button("Найти термин"):
+            results = session.query(Term).filter(Term.name.ilike(f"%{search_term}%")).all()
+            if not results:
+                st.warning("❌ Термины не найдены.")
             for t in results:
-                st.markdown(f"### 📘 {t.name}")
-                for d in t.definitions:
-                    try:
-                        decrypted = decrypt_text(d.content)
-                        st.markdown(f"- _{decrypted}_")
-                    except:
-                        st.markdown("- ❌ Не удалось расшифровать")
+                with st.expander(f"📘 {t.name}"):
+                    for d in t.definitions:
+                        try:
+                            st.markdown(f"- _{decrypt_text(d.content)}_")
+                        except:
+                            st.markdown("- ❌ Не удалось расшифровать")
 
-    st.markdown("---")
+    with col2:
+        keyword = st.text_input("🔤 Поиск по содержанию определения")
+        if st.button("Найти определение"):
+            defs = session.query(Definition).all()
+            found = False
+            for d in defs:
+                try:
+                    text = decrypt_text(d.content)
+                    if keyword.lower() in text.lower():
+                        st.success(f"📘 **{d.term.name}** → {text}")
+                        found = True
+                except:
+                    continue
+            if not found:
+                st.info("Нет совпадений.")
 
-    keyword = st.text_input("Поиск по содержимому определений (ключевое слово)")
-    if st.button("Найти по определению"):
-        definitions = session.query(Definition).all()
-        count = 0
-        for d in definitions:
-            try:
-                text = decrypt_text(d.content)
-                if keyword.lower() in text.lower():
-                    st.markdown(f"- **{d.term.name}** → {text}")
-                    count += 1
-            except:
-                continue
-        if count == 0:
-            st.info("Совпадений не найдено.")
-
-    st.markdown("---")
-
-    st.subheader("📚 Источники по термину")
-    term_for_sources = st.text_input("Введите точное название термина для получения источников")
-    if st.button("Показать источники"):
-        term = session.query(Term).filter_by(name=term_for_sources).first()
-        if not term:
-            st.warning("Такой термин не найден.")
-        else:
-            st.markdown(f"Источники для термина **{term.name}**:")
-            for s in term.sources:
-                st.markdown(f"- {s.title} ({s.year})")
-
-# === Удаление ===
-elif menu == "🗑 Удалить термин":
-    st.subheader("🗑 Удаление термина")
-
+# === Удаление
+elif menu == "🗑 Удаление":
+    st.markdown("### 🗑 Удаление термина")
     terms = session.query(Term).all()
-    names = [t.name for t in terms]
-    if names:
-        selected = st.selectbox("Выберите термин для удаления", names)
-        if st.button("Удалить"):
-            term = session.query(Term).filter_by(name=selected).first()
-            if term:
+    if not terms:
+        st.info("Нет терминов для удаления.")
+    else:
+        selected = st.selectbox("Выберите термин для удаления", [t.name for t in terms])
+        confirm = st.checkbox("Подтверждаю удаление термина")
+
+        if st.button("❌ Удалить термин"):
+            if not confirm:
+                st.warning("Вы должны подтвердить удаление.")
+            else:
+                term = session.query(Term).filter_by(name=selected).first()
                 session.delete(term)
                 session.commit()
-                st.success(f"Термин '{selected}' удалён.")
-            else:
-                st.warning("Термин не найден.")
-    else:
-        st.info("Нет доступных терминов для удаления.")
+                st.success(f"✅ Термин **{selected}** успешно удалён.")
