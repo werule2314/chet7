@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import streamlit as st
 from sqlalchemy.orm import sessionmaker
 from db.models import Term, Definition, Source, get_engine
+from utils.security import encrypt_text, decrypt_text
+from cryptography.fernet import InvalidToken
 
 st.set_page_config(page_title="Система учёта терминов", layout="centered")
 
@@ -12,7 +14,7 @@ engine = get_engine()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-st.title("📚 Система учёта терминов и определений")
+st.title("📚 Система учёта терминов и определений (защищённая)")
 
 menu = st.sidebar.selectbox("Навигация", [
     "Добавить термин",
@@ -38,8 +40,14 @@ if menu == "Добавить термин":
             if existing_term:
                 st.error("Такой термин уже существует.")
             else:
+                try:
+                    encrypted = encrypt_text(definition)
+                except Exception as e:
+                    st.error(f"Ошибка шифрования: {e}")
+                    st.stop()
+
                 term = Term(name=name)
-                defn = Definition(content=definition)
+                defn = Definition(content=encrypted)
                 term.definitions.append(defn)
 
                 source = session.query(Source).filter_by(title=source_title, year=source_year).first()
@@ -49,7 +57,7 @@ if menu == "Добавить термин":
                 term.sources.append(source)
                 session.add(term)
                 session.commit()
-                st.success(f"Термин '{name}' добавлен.")
+                st.success(f"Термин '{name}' добавлен (шифрование применено).")
 
 # === 2. Просмотр терминов ===
 elif menu == "Просмотр терминов":
@@ -61,7 +69,11 @@ elif menu == "Просмотр терминов":
     for t in terms:
         st.markdown(f"### {t.name}")
         for d in t.definitions:
-            st.markdown(f"- _Определение_: {d.content}")
+            try:
+                text = decrypt_text(d.content)
+                st.markdown(f"- _Определение_: {text}")
+            except InvalidToken:
+                st.markdown(f"- ❌ Невозможно расшифровать определение.")
         for s in t.sources:
             st.markdown(f"📌 Источник: **{s.title}**, {s.year}")
         st.markdown("---")
@@ -98,18 +110,28 @@ elif menu == "Поиск и выборки":
             for t in results:
                 st.markdown(f"### 📘 {t.name}")
                 for d in t.definitions:
-                    st.markdown(f"- _{d.content}_")
+                    try:
+                        decrypted = decrypt_text(d.content)
+                        st.markdown(f"- _{decrypted}_")
+                    except:
+                        st.markdown(f"- ❌ Не удалось расшифровать.")
 
     st.markdown("---")
 
     keyword = st.text_input("Поиск по содержимому определений (ключевое слово)")
     if st.button("Найти по определению"):
-        definitions = session.query(Definition).filter(Definition.content.ilike(f"%{keyword}%")).all()
-        if not definitions:
+        definitions = session.query(Definition).all()
+        count = 0
+        for d in definitions:
+            try:
+                text = decrypt_text(d.content)
+                if keyword.lower() in text.lower():
+                    st.markdown(f"- **{d.term.name}** → {text}")
+                    count += 1
+            except:
+                continue
+        if count == 0:
             st.info("Совпадений не найдено.")
-        else:
-            for d in definitions:
-                st.markdown(f"- **{d.term.name}** → {d.content}")
 
     st.markdown("---")
 
